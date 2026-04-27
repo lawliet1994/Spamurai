@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -9,6 +10,31 @@ from config import DEFAULT_CATEGORY, OLLAMA_URL, OLLAMA_MODEL, get_categories
 LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 SHORT_WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+NOISE_LINE_PATTERNS = [
+    r"^电子邮箱[:：]",
+    r"^邮箱[:：]",
+    r"^电话[:：]",
+    r"^手机[:：]",
+    r"^传真[:：]",
+    r"^地址[:：]",
+    r"^发件人[:：]",
+    r"^收件人[:：]",
+    r"^抄送[:：]",
+    r"^发送时间[:：]",
+    r"^主题[:：]",
+    r"^暂不支持读取此类型附件[:：]",
+]
+
+REPLY_HEADER_PATTERNS = [
+    r"^-{2,}\s*邮件原文\s*-{2,}",
+    r"^[-—_]{6,}$",
+    r"^={6,}$",
+    r"^From:\s",
+    r"^Sent:\s",
+    r"^To:\s",
+    r"^Subject:\s",
+]
 
 
 def ask_ollama(prompt: str, json_mode=False) -> str:
@@ -51,6 +77,42 @@ def _future_weekday_mapping(now: datetime) -> str:
     return "\n".join(lines)
 
 
+def _matches_any_pattern(value: str, patterns: list[str]) -> bool:
+    return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def clean_email_body_for_analysis(body: str) -> str:
+    lines = []
+    in_signature = False
+
+    for raw_line in (body or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            if lines and lines[-1]:
+                lines.append("")
+            continue
+
+        if line.startswith("~") and set(line) <= {"~"}:
+            in_signature = True
+            continue
+
+        if _matches_any_pattern(line, REPLY_HEADER_PATTERNS):
+            in_signature = False
+            continue
+
+        if _matches_any_pattern(line, NOISE_LINE_PATTERNS):
+            continue
+
+        if in_signature:
+            continue
+
+        lines.append(line)
+
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned or (body or "").strip()
+
+
 def build_email_analysis_prompt(subject: str, body: str, now: datetime | None = None) -> str:
     now = now or datetime.now(LOCAL_TIMEZONE)
     if now.tzinfo is None:
@@ -62,6 +124,7 @@ def build_email_analysis_prompt(subject: str, body: str, now: datetime | None = 
     weekday_mapping = _future_weekday_mapping(now)
     categories = get_categories()
     category_options = "、".join(categories)
+    cleaned_body = clean_email_body_for_analysis(body)
 
     return f"""
 你是一个企业邮箱秘书。请分析下面邮件，输出严格 JSON，不要解释。
@@ -100,7 +163,7 @@ def build_email_analysis_prompt(subject: str, body: str, now: datetime | None = 
 {subject}
 
 邮件正文：
-{body[:4000]}
+{cleaned_body[:4000]}
 """
 
 

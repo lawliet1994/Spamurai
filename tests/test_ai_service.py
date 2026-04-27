@@ -54,6 +54,54 @@ class AIServiceTests(unittest.TestCase):
         self.assertEqual(result["category"], "客户升级")
         self.assertEqual(result["priority"], "中")
 
+    def test_clean_email_body_removes_reply_headers_signature_and_unsupported_attachment_noise(self):
+        body = """各位，请各部门认真学习，贯彻落实。
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+丁晓斌
+
+中国太平洋财产保险股份有限公司
+
+营运中心上海分中心
+
+电子邮箱：sodingxiaobin@cpic.com.cn
+
+电话：021-33964125 18918503081
+
+
+
+--------------------------------------------------------------------------------
+----邮件原文----发件人："综合支持部" <sooffice@cpic.com.cn>收件人："丁晓斌" <sodingxiaobin@cpic.com.cn>发送时间：2026-04-09 13:23:25主题：集团总裁赵永刚在集团协同业务开门红总结会上的讲话各部门：
+
+      附件为集团总裁赵永刚在集团协同业务开门红总结会上的讲话，请各部门认真学习，贯彻落实。
+
+附件内容：
+
+附件：情况通报.pdf
+暂不支持读取此类型附件：application/pdf
+"""
+
+        cleaned = ai_service.clean_email_body_for_analysis(body)
+
+        self.assertIn("各位，请各部门认真学习，贯彻落实。", cleaned)
+        self.assertNotIn("电子邮箱", cleaned)
+        self.assertNotIn("电话：", cleaned)
+        self.assertNotIn("----邮件原文----", cleaned)
+        self.assertNotIn("收件人：", cleaned)
+        self.assertNotIn("暂不支持读取此类型附件", cleaned)
+
+    def test_email_analysis_prompt_uses_cleaned_body(self):
+        prompt = ai_service.build_email_analysis_prompt(
+            subject="学习通知",
+            body="请认真学习。\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n张三\n电话：123\n----邮件原文----发件人：a",
+        )
+
+        self.assertIn("请认真学习。", prompt)
+        self.assertNotIn("电话：123", prompt)
+        self.assertNotIn("----邮件原文----", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
