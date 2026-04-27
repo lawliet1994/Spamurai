@@ -836,10 +836,7 @@ def index_page(request: Request):
                     url = f"/api/emails/{row['id']}/attachments/{attachment['id']}"
                     with ui.row().classes("items-center justify-between w-full no-wrap"):
                         ui.label(attachment["filename"]).classes("text-sm truncate")
-                        ui.button(
-                            icon="download",
-                            on_click=lambda u=url: ui.navigate.to(u),
-                        ).props("flat dense round")
+                        ui.button(icon="download").props(f'flat dense round href="{url}"')
             else:
                 ui.label("无附件").classes("text-xs text-gray-500")
         reply_editor.value = draft
