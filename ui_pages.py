@@ -612,7 +612,7 @@ async def home_page():
                     render_category_badge(f"{category} {count}")
 
         with ui.column().classes("w-[380px] h-full p-4 overflow-auto"):
-            ui.label("会议时间线").classes("text-xl gold-title")
+            ui.label("今日会议时间线").classes("text-xl gold-title")
             if meeting_timeline_rows:
                 for row in meeting_timeline_rows:
                     with ui.card().classes("panel w-full p-3 mb-2"):
@@ -812,7 +812,7 @@ def index_page(request: Request):
 
             ui.separator().classes("my-4")
 
-            ui.label("会议时间线").classes("text-lg gold-title")
+            ui.label("所有会议时间线").classes("text-lg gold-title")
             meeting_area = ui.column().classes("w-full")
 
     def open_reply(row):
