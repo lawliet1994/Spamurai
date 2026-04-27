@@ -1,4 +1,4 @@
-import imaplib
+import poplib
 import unittest
 from email.message import EmailMessage
 from unittest.mock import patch
@@ -6,88 +6,44 @@ from unittest.mock import patch
 from services import mail_client
 
 
-class SelectFailsIMAP:
-    searched = False
-    logged_out = False
+def analysis_result():
+    return {
+        "category": "低优先级",
+        "summary": "摘要",
+        "priority": "低",
+        "meeting_time": "",
+        "meeting_location": "",
+        "suggested_action": "",
+    }
 
-    def __init__(self, host):
+
+class LoginFailsPOP3:
+    quit_called = False
+
+    def __init__(self, host, port):
         self.host = host
+        self.port = port
 
-    def login(self, user, password):
-        return "OK", [b"LOGIN completed"]
+    def user(self, username):
+        return b"+OK"
 
-    def _simple_command(self, command, payload):
-        return "OK", [b"ID completed"]
+    def pass_(self, password):
+        raise poplib.error_proto("-ERR authentication failed")
 
-    def select(self, mailbox):
-        return "NO", [b"Mailbox does not exist"]
-
-    def search(self, charset, criterion):
-        self.__class__.searched = True
-        raise imaplib.IMAP4.error(
-            "command SEARCH illegal in state AUTH, only allowed in states SELECTED"
-        )
-
-    def logout(self):
-        self.__class__.logged_out = True
-        return "BYE", [b"LOGOUT completed"]
+    def quit(self):
+        self.__class__.quit_called = True
+        return b"+OK"
 
 
 class MailClientTests(unittest.TestCase):
-    def test_sync_emails_stops_when_mailbox_select_fails(self):
-        SelectFailsIMAP.searched = False
-        SelectFailsIMAP.logged_out = False
+    def test_sync_emails_stops_when_pop3_login_fails(self):
+        LoginFailsPOP3.quit_called = False
 
-        with patch("services.mail_client.imaplib.IMAP4_SSL", SelectFailsIMAP):
-            with self.assertRaisesRegex(RuntimeError, "IMAP select failed"):
+        with patch("services.mail_client.poplib.POP3_SSL", LoginFailsPOP3):
+            with self.assertRaisesRegex(RuntimeError, "POP3 login failed"):
                 mail_client.sync_emails(limit=20)
 
-        self.assertFalse(SelectFailsIMAP.searched)
-        self.assertTrue(SelectFailsIMAP.logged_out)
-
-    def test_sync_emails_sends_imap_id_before_select(self):
-        calls = []
-
-        class RecordsIMAP(SelectFailsIMAP):
-            def login(self, user, password):
-                calls.append("login")
-                return "OK", [b"LOGIN completed"]
-
-            def _simple_command(self, command, payload):
-                calls.append((command, payload))
-                return "OK", [b"ID completed"]
-
-            def select(self, mailbox):
-                calls.append("select")
-                return "NO", [b"Mailbox does not exist"]
-
-        with patch("services.mail_client.imaplib.IMAP4_SSL", RecordsIMAP):
-            with self.assertRaisesRegex(RuntimeError, "IMAP select failed"):
-                mail_client.sync_emails(limit=20)
-
-        self.assertEqual(calls[0], "login")
-        self.assertEqual(calls[1][0], "ID")
-        self.assertIn('"MailAssistant"', calls[1][1])
-        self.assertEqual(calls[2], "select")
-
-    def test_sync_emails_continues_when_imap_id_is_unsupported(self):
-        calls = []
-
-        class UnsupportedIDIMAP(SelectFailsIMAP):
-            def _simple_command(self, command, payload):
-                calls.append((command, payload))
-                raise imaplib.IMAP4.error("ID unsupported")
-
-            def select(self, mailbox):
-                calls.append("select")
-                return "NO", [b"Mailbox does not exist"]
-
-        with patch("services.mail_client.imaplib.IMAP4_SSL", UnsupportedIDIMAP):
-            with self.assertRaisesRegex(RuntimeError, "IMAP select failed"):
-                mail_client.sync_emails(limit=20)
-
-        self.assertEqual(calls[0][0], "ID")
-        self.assertEqual(calls[1], "select")
+        self.assertTrue(LoginFailsPOP3.quit_called)
 
     def test_sync_emails_logs_out_before_ai_analysis(self):
         calls = []
@@ -99,56 +55,46 @@ class MailClientTests(unittest.TestCase):
             b"Test body"
         )
 
-        class OneMessageIMAP:
-            def __init__(self, host):
+        class OneMessagePOP3:
+            def __init__(self, host, port):
                 self.host = host
+                self.port = port
 
-            def login(self, user, password):
-                calls.append("login")
-                return "OK", [b"LOGIN completed"]
+            def user(self, username):
+                calls.append("user")
+                return b"+OK"
 
-            def _simple_command(self, command, payload):
-                calls.append("id")
-                return "OK", [b"ID completed"]
+            def pass_(self, password):
+                calls.append("pass")
+                return b"+OK"
 
-            def select(self, mailbox):
-                calls.append("select")
-                return "OK", [b"1"]
+            def uidl(self):
+                calls.append("uidl")
+                return b"+OK", [b"1 unique-id-1"], 12
 
-            def search(self, charset, criterion):
-                calls.append("search")
-                return "OK", [b"1"]
+            def retr(self, num):
+                calls.append("retr")
+                return b"+OK", raw_message.splitlines(), len(raw_message)
 
-            def fetch(self, num, query):
-                calls.append("fetch")
-                return "OK", [(b"1 (RFC822 {1}", raw_message)]
-
-            def logout(self):
-                calls.append("logout")
-                return "BYE", [b"LOGOUT completed"]
+            def quit(self):
+                calls.append("quit")
+                return b"+OK"
 
         def analyze_email(subject, body):
             calls.append("analyze")
-            return {
-                "category": "低优先级",
-                "summary": "摘要",
-                "priority": "低",
-                "meeting_time": "",
-                "meeting_location": "",
-                "suggested_action": "",
-            }
+            return analysis_result()
 
         def insert_email(data):
             calls.append("insert")
 
         with (
-            patch("services.mail_client.imaplib.IMAP4_SSL", OneMessageIMAP),
+            patch("services.mail_client.poplib.POP3_SSL", OneMessagePOP3),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email", insert_email),
         ):
             self.assertEqual(mail_client.sync_emails(limit=1), 1)
 
-        self.assertLess(calls.index("logout"), calls.index("analyze"))
+        self.assertLess(calls.index("quit"), calls.index("analyze"))
 
     def test_sync_emails_skips_existing_messages_before_ai_analysis(self):
         calls = []
@@ -160,48 +106,39 @@ class MailClientTests(unittest.TestCase):
             b"Test body"
         )
 
-        class TwoMessageIMAP:
-            def __init__(self, host):
+        class TwoMessagePOP3:
+            def __init__(self, host, port):
                 self.host = host
+                self.port = port
 
-            def login(self, user, password):
-                return "OK", [b"LOGIN completed"]
+            def user(self, username):
+                return b"+OK"
 
-            def _simple_command(self, command, payload):
-                return "OK", [b"ID completed"]
+            def pass_(self, password):
+                return b"+OK"
 
-            def select(self, mailbox):
-                return "OK", [b"2"]
+            def uidl(self):
+                return b"+OK", [b"1 existing-id", b"2 new-id"], 24
 
-            def search(self, charset, criterion):
-                return "OK", [b"1 2"]
+            def retr(self, num):
+                return b"+OK", raw_message.splitlines(), len(raw_message)
 
-            def fetch(self, num, query):
-                return "OK", [(b"1 (RFC822 {1}", raw_message)]
-
-            def logout(self):
-                return "BYE", [b"LOGOUT completed"]
+            def quit(self):
+                return b"+OK"
 
         def email_exists(uid):
             calls.append(("exists", uid))
-            return uid == "1"
+            return uid == "existing-id"
 
         def analyze_email(subject, body):
             calls.append("analyze")
-            return {
-                "category": "低优先级",
-                "summary": "摘要",
-                "priority": "低",
-                "meeting_time": "",
-                "meeting_location": "",
-                "suggested_action": "",
-            }
+            return analysis_result()
 
         def insert_email(data):
             calls.append(("insert", data["uid"]))
 
         with (
-            patch("services.mail_client.imaplib.IMAP4_SSL", TwoMessageIMAP),
+            patch("services.mail_client.poplib.POP3_SSL", TwoMessagePOP3),
             patch("services.mail_client.email_exists", email_exists),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email", insert_email),
@@ -209,8 +146,8 @@ class MailClientTests(unittest.TestCase):
             self.assertEqual(mail_client.sync_emails(limit=2), 1)
 
         self.assertEqual(calls.count("analyze"), 1)
-        self.assertIn(("insert", "2"), calls)
-        self.assertNotIn(("insert", "1"), calls)
+        self.assertIn(("insert", "new-id"), calls)
+        self.assertNotIn(("insert", "existing-id"), calls)
 
     def test_sync_emails_includes_readable_attachment_text_in_ai_analysis(self):
         calls = []
@@ -226,41 +163,32 @@ class MailClientTests(unittest.TestCase):
         )
         raw_message = message.as_bytes()
 
-        class OneMessageIMAP:
-            def __init__(self, host):
+        class OneMessagePOP3:
+            def __init__(self, host, port):
                 self.host = host
+                self.port = port
 
-            def login(self, user, password):
-                return "OK", [b"LOGIN completed"]
+            def user(self, username):
+                return b"+OK"
 
-            def _simple_command(self, command, payload):
-                return "OK", [b"ID completed"]
+            def pass_(self, password):
+                return b"+OK"
 
-            def select(self, mailbox):
-                return "OK", [b"1"]
+            def uidl(self):
+                return b"+OK", [b"1 unique-id-1"], 12
 
-            def search(self, charset, criterion):
-                return "OK", [b"1"]
+            def retr(self, num):
+                return b"+OK", raw_message.splitlines(), len(raw_message)
 
-            def fetch(self, num, query):
-                return "OK", [(b"1 (RFC822 {1}", raw_message)]
-
-            def logout(self):
-                return "BYE", [b"LOGOUT completed"]
+            def quit(self):
+                return b"+OK"
 
         def analyze_email(subject, body):
             calls.append(("analyze", subject, body))
-            return {
-                "category": "低优先级",
-                "summary": "摘要",
-                "priority": "低",
-                "meeting_time": "",
-                "meeting_location": "",
-                "suggested_action": "",
-            }
+            return analysis_result()
 
         with (
-            patch("services.mail_client.imaplib.IMAP4_SSL", OneMessageIMAP),
+            patch("services.mail_client.poplib.POP3_SSL", OneMessagePOP3),
             patch("services.mail_client.email_exists", return_value=False),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email"),

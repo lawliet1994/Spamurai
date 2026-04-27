@@ -1,10 +1,10 @@
 import contextlib
-import imaplib
 import email
+import poplib
 from email.header import decode_header
 from html.parser import HTMLParser
 
-from config import IMAP_HOST, IMAP_USER, IMAP_PASS, IMAP_MAILBOX
+from config import POP3_HOST, POP3_USER, POP3_PASS
 from services.ai_service import analyze_email
 from database import email_exists, insert_email
 
@@ -32,33 +32,6 @@ class _HTMLTextExtractor(HTMLParser):
 
     def text(self):
         return "\n".join(self.parts)
-
-
-def _format_imap_response(data):
-    if not data:
-        return ""
-
-    parts = []
-    for item in data:
-        if isinstance(item, bytes):
-            parts.append(item.decode("utf-8", errors="ignore"))
-        else:
-            parts.append(str(item))
-
-    return "; ".join(parts)
-
-
-def _require_ok(status, data, action):
-    if status != "OK":
-        message = _format_imap_response(data)
-        raise RuntimeError(f"IMAP {action}: {message}")
-
-
-def _send_imap_id(mail):
-    payload = '("name" "MailAssistant" "version" "0.1.0" "vendor" "MailAssistant")'
-    imaplib.Commands.setdefault("ID", ("AUTH", "SELECTED"))
-    with contextlib.suppress(imaplib.IMAP4.error, AttributeError, KeyError, OSError):
-        mail._simple_command("ID", payload)
 
 
 def decode_text(value):
@@ -156,13 +129,13 @@ def combine_body_and_attachments(body, attachment_texts):
     return "\n\n".join(section for section in sections if section)
 
 
-def _parse_email_record(num, raw):
+def _parse_email_record(uid, raw):
     msg = email.message_from_bytes(raw)
     body = extract_body(msg)
     attachment_texts = extract_attachment_texts(msg)
 
     return {
-        "uid": num.decode(),
+        "uid": uid,
         "sender": decode_text(msg.get("From")),
         "subject": decode_text(msg.get("Subject")),
         "received_at": msg.get("Date", ""),
@@ -172,31 +145,38 @@ def _parse_email_record(num, raw):
 
 def sync_emails(limit=20):
     records = []
-    mail = imaplib.IMAP4_SSL(IMAP_HOST)
+    mail = poplib.POP3(POP3_HOST)
     try:
-        status, data = mail.login(IMAP_USER, IMAP_PASS)
-        _require_ok(status, data, "login failed")
+        try:
+            mail.user(POP3_USER)
+            mail.pass_(POP3_PASS)
+        except poplib.error_proto as exc:
+            raise RuntimeError(f"POP3 login failed: {exc}") from exc
 
-        _send_imap_id(mail)
+        try:
+            _, uid_lines, _ = mail.uidl()
+        except poplib.error_proto as exc:
+            raise RuntimeError(f"POP3 uidl failed: {exc}") from exc
 
-        status, data = mail.select(IMAP_MAILBOX)
-        _require_ok(status, data, f"select failed for mailbox {IMAP_MAILBOX!r}")
+        for line in uid_lines[-limit:]:
+            parts = line.decode("utf-8", errors="ignore").split(maxsplit=1)
+            if len(parts) != 2:
+                continue
 
-        status, data = mail.search(None, "ALL")
-        _require_ok(status, data, "search failed")
-        ids = data[0].split()[-limit:]
+            message_number, uid = parts
+            if email_exists(uid):
+                continue
 
-        for num in ids:
-            status, msg_data = mail.fetch(num, "(RFC822)")
-            _require_ok(status, msg_data, f"fetch failed for message {num!r}")
+            try:
+                _, lines, _ = mail.retr(message_number)
+            except poplib.error_proto as exc:
+                raise RuntimeError(f"POP3 retr failed for message {message_number!r}: {exc}") from exc
 
-            raw = msg_data[0][1]
-            record = _parse_email_record(num, raw)
-            if not email_exists(record["uid"]):
-                records.append(record)
+            raw = b"\r\n".join(lines)
+            records.append(_parse_email_record(uid, raw))
     finally:
-        with contextlib.suppress(imaplib.IMAP4.error, OSError):
-            mail.logout()
+        with contextlib.suppress(poplib.error_proto, OSError):
+            mail.quit()
 
     count = 0
 

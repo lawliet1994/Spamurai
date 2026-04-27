@@ -17,15 +17,15 @@ TEMPLATE_DIR.mkdir(exist_ok=True)
 
 DB_PATH = DATA_DIR / "mail_assistant.db"
 
-IMAP_HOST = os.getenv("IMAP_HOST", "imap.163.com")
-IMAP_USER = os.getenv("IMAP_USER", "")
-IMAP_PASS = os.getenv("IMAP_PASS", "")
-IMAP_MAILBOX = os.getenv("IMAP_MAILBOX", "INBOX")
+POP3_HOST = os.getenv("POP3_HOST", "pop.163.com")
+POP3_PORT = int(os.getenv("POP3_PORT", "995"))
+POP3_USER = os.getenv("POP3_USER", "")
+POP3_PASS = os.getenv("POP3_PASS", "")
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USER = os.getenv("SMTP_USER", IMAP_USER)
-SMTP_PASS = os.getenv("SMTP_PASS", IMAP_PASS)
+SMTP_USER = os.getenv("SMTP_USER", POP3_USER)
+SMTP_PASS = os.getenv("SMTP_PASS", POP3_PASS)
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")

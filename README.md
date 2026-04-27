@@ -37,7 +37,7 @@ AI 邮箱助手把分类权交还给你：
 
 ## 🚀 核心能力
 
-- 🔄 同步 IMAP 邮箱邮件
+- 🔄 同步 POP3 邮箱邮件
 - 🤖 调用本地 AI 进行分类、摘要和优先级判断
 - 📅 识别会议时间、会议地点，并生成会议时间线
 - 🛡️ 识别钓鱼、诈骗、异常付款、可疑附件等风险邮件
@@ -163,10 +163,10 @@ SMTP_FROM=your-email@example.com
 示例：
 
 ```text
-IMAP_HOST=imap.example.com
-IMAP_USER=your-email@example.com
-IMAP_PASS=your-imap-app-password
-IMAP_MAILBOX=INBOX
+POP3_HOST=pop.example.com
+POP3_PORT=995
+POP3_USER=your-email@example.com
+POP3_PASS=your-pop3-app-password
 
 SMTP_HOST=smtp.example.com
 SMTP_PORT=465
@@ -203,7 +203,7 @@ http://localhost:8080
 ├── ui_pages.py          # NiceGUI 页面
 ├── services/            # 业务功能函数
 │   ├── ai_service.py        # AI 提示词、邮件分析、模板优化
-│   ├── mail_client.py       # IMAP 同步与正文/附件解析
+│   ├── mail_client.py       # POP3 同步与正文/附件解析
 │   ├── smtp_client.py       # SMTP 回复发送
 │   └── template_service.py  # Markdown 回复模板
 ├── tests/               # 单元测试
