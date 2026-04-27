@@ -1,4 +1,6 @@
 import asyncio
+from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from nicegui import ui
@@ -19,6 +21,9 @@ from services.mail_client import sync_emails
 from services.smtp_client import send_reply
 from services.template_service import get_template, init_templates, save_template, render_template
 from services.ai_service import analyze_email, suggest_template
+
+
+LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def apply_style():
@@ -431,11 +436,28 @@ def unread_counts_by_category(rows: list[dict]) -> tuple[int, dict[str, int]]:
     return total, counts
 
 
+def format_email_time(value: str | None) -> str:
+    if not value:
+        return ""
+
+    try:
+        received_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, AttributeError):
+        return value
+
+    if received_at.tzinfo is None:
+        received_at = received_at.replace(tzinfo=LOCAL_TIMEZONE)
+
+    return received_at.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+
+
 def render_sender_summary(row: dict, on_click=None):
     sender = row.get("sender") or "未知发件人"
     summary = row.get("summary") or "无摘要"
+    received_at = format_email_time(row.get("received_at"))
+    time_part = f" · {received_at}" if received_at else ""
     tone_class = "text-gray-500" if row.get("is_read") else "text-gray-700"
-    label = ui.label(f"{sender} · {summary}").classes(f"text-sm {tone_class} truncate w-full")
+    label = ui.label(f"{sender}{time_part} · {summary}").classes(f"text-sm {tone_class} truncate w-full")
     if on_click:
         label.classes("cursor-pointer")
         label.on("click", lambda: on_click(row))
@@ -686,6 +708,7 @@ def index_page(request: Request):
                 ui.label("AI 回复助手").classes("text-xl gold-title")
 
                 reply_subject = ui.label("请选择一封邮件").classes("text-sm text-gray-500 mb-2")
+                reply_received_at = ui.label("").classes("text-xs text-gray-500 mb-2")
 
                 body_viewer = ui.textarea(
                     label="邮件正文与附件",
@@ -798,6 +821,8 @@ def index_page(request: Request):
         draft = render_template(raw_template, row)
 
         reply_subject.text = f"回复：{row['subject'] or '无主题'}"
+        received_at = format_email_time(row.get("received_at"))
+        reply_received_at.text = f"接收时间：{received_at}" if received_at else ""
         body_viewer.value = row.get("body") or "无正文或附件内容"
         reply_editor.value = draft
         template_editor.value = raw_template

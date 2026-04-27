@@ -59,6 +59,16 @@ class MailStyleTests(unittest.TestCase):
         self.assertEqual(total, 2)
         self.assertEqual(counts, {"今日要务": 1, "会议邀约": 1})
 
+    def test_format_email_time_uses_local_datetime(self):
+        value = ui_pages.format_email_time("Sun, 26 Apr 2026 09:30:00 +0800")
+
+        self.assertEqual(value, "2026-04-26 09:30")
+
+    def test_format_email_time_falls_back_to_original_value(self):
+        value = ui_pages.format_email_time("invalid date")
+
+        self.assertEqual(value, "invalid date")
+
 
 if __name__ == "__main__":
     unittest.main()

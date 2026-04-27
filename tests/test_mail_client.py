@@ -39,7 +39,7 @@ class MailClientTests(unittest.TestCase):
     def test_sync_emails_stops_when_pop3_login_fails(self):
         LoginFailsPOP3.quit_called = False
 
-        with patch("services.mail_client.poplib.POP3_SSL", LoginFailsPOP3):
+        with patch("services.mail_client.poplib.POP3", LoginFailsPOP3):
             with self.assertRaisesRegex(RuntimeError, "POP3 login failed"):
                 mail_client.sync_emails(limit=20)
 
