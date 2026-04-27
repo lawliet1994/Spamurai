@@ -69,6 +69,18 @@ class MailStyleTests(unittest.TestCase):
 
         self.assertEqual(value, "invalid date")
 
+    def test_email_meta_text_excludes_summary(self):
+        row = {
+            "sender": "sender@example.com",
+            "summary": "摘要内容",
+            "received_at": "Sun, 26 Apr 2026 09:30:00 +0800",
+        }
+
+        value = ui_pages.email_meta_text(row)
+
+        self.assertEqual(value, "sender@example.com · 2026-04-26 09:30")
+        self.assertNotIn("摘要内容", value)
+
 
 if __name__ == "__main__":
     unittest.main()

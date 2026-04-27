@@ -452,17 +452,23 @@ def format_email_time(value: str | None) -> str:
     return received_at.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
 
 
-def render_sender_summary(row: dict, on_click=None):
+def email_meta_text(row: dict) -> str:
     sender = row.get("sender") or "未知发件人"
-    summary = row.get("summary") or "无摘要"
     received_at = format_email_time(row.get("received_at"))
     time_part = f" · {received_at}" if received_at else ""
+    return f"{sender}{time_part}"
+
+
+def render_sender_summary(row: dict, on_click=None):
+    summary = row.get("summary") or "无摘要"
     tone_class = "text-gray-500" if row.get("is_read") else "text-gray-700"
-    label = ui.label(f"{sender}{time_part} · {summary}").classes(f"text-sm {tone_class} truncate w-full")
+    with ui.column().classes("w-full gap-0") as container:
+        ui.label(email_meta_text(row)).classes(f"text-xs {tone_class} truncate w-full")
+        ui.label(summary).classes(f"text-sm {tone_class} truncate w-full")
     if on_click:
-        label.classes("cursor-pointer")
-        label.on("click", lambda: on_click(row))
-    return label
+        container.classes("cursor-pointer")
+        container.on("click", lambda: on_click(row))
+    return container
 
 
 def render_clickable_label(text: str, classes: str, row: dict, on_click=None):
