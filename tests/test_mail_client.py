@@ -1,6 +1,8 @@
 import poplib
+import tempfile
 import unittest
 from email.message import EmailMessage
+from pathlib import Path
 from unittest.mock import patch
 
 from services import mail_client
@@ -20,9 +22,8 @@ def analysis_result():
 class LoginFailsPOP3:
     quit_called = False
 
-    def __init__(self, host, port):
+    def __init__(self, host):
         self.host = host
-        self.port = port
 
     def user(self, username):
         return b"+OK"
@@ -56,9 +57,8 @@ class MailClientTests(unittest.TestCase):
         )
 
         class OneMessagePOP3:
-            def __init__(self, host, port):
+            def __init__(self, host):
                 self.host = host
-                self.port = port
 
             def user(self, username):
                 calls.append("user")
@@ -88,7 +88,7 @@ class MailClientTests(unittest.TestCase):
             calls.append("insert")
 
         with (
-            patch("services.mail_client.poplib.POP3_SSL", OneMessagePOP3),
+            patch("services.mail_client.poplib.POP3", OneMessagePOP3),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email", insert_email),
         ):
@@ -107,9 +107,8 @@ class MailClientTests(unittest.TestCase):
         )
 
         class TwoMessagePOP3:
-            def __init__(self, host, port):
+            def __init__(self, host):
                 self.host = host
-                self.port = port
 
             def user(self, username):
                 return b"+OK"
@@ -138,7 +137,7 @@ class MailClientTests(unittest.TestCase):
             calls.append(("insert", data["uid"]))
 
         with (
-            patch("services.mail_client.poplib.POP3_SSL", TwoMessagePOP3),
+            patch("services.mail_client.poplib.POP3", TwoMessagePOP3),
             patch("services.mail_client.email_exists", email_exists),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email", insert_email),
@@ -164,9 +163,8 @@ class MailClientTests(unittest.TestCase):
         raw_message = message.as_bytes()
 
         class OneMessagePOP3:
-            def __init__(self, host, port):
+            def __init__(self, host):
                 self.host = host
-                self.port = port
 
             def user(self, username):
                 return b"+OK"
@@ -188,16 +186,74 @@ class MailClientTests(unittest.TestCase):
             return analysis_result()
 
         with (
-            patch("services.mail_client.poplib.POP3_SSL", OneMessagePOP3),
+            patch("services.mail_client.poplib.POP3", OneMessagePOP3),
             patch("services.mail_client.email_exists", return_value=False),
             patch("services.mail_client.analyze_email", analyze_email),
             patch("services.mail_client.insert_email"),
+            patch("services.mail_client.insert_email_attachments"),
         ):
             self.assertEqual(mail_client.sync_emails(limit=1), 1)
 
         analyzed_body = calls[0][2]
         self.assertIn("附件：report.txt", analyzed_body)
         self.assertIn("附件结论：预算超支，需要本周处理。", analyzed_body)
+
+    def test_sync_emails_saves_original_attachments_for_download(self):
+        saved = []
+        message = EmailMessage()
+        message["From"] = "sender@example.com"
+        message["Subject"] = "Report"
+        message["Date"] = "Sun, 26 Apr 2026 09:00:00 +0800"
+        message.set_content("请查看附件。")
+        message.add_attachment(
+            b"binary report content",
+            maintype="application",
+            subtype="pdf",
+            filename="report.pdf",
+        )
+        raw_message = message.as_bytes()
+
+        class OneMessagePOP3:
+            def __init__(self, host):
+                self.host = host
+
+            def user(self, username):
+                return b"+OK"
+
+            def pass_(self, password):
+                return b"+OK"
+
+            def uidl(self):
+                return b"+OK", [b"1 unique-id-1"], 12
+
+            def retr(self, num):
+                return b"+OK", raw_message.splitlines(), len(raw_message)
+
+            def quit(self):
+                return b"+OK"
+
+        def insert_email_attachments(email_uid, attachments):
+            saved.append((email_uid, attachments))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("services.mail_client.poplib.POP3", OneMessagePOP3),
+                patch("services.mail_client.email_exists", return_value=False),
+                patch("services.mail_client.analyze_email", return_value=analysis_result()),
+                patch("services.mail_client.insert_email"),
+                patch("services.mail_client.insert_email_attachments", insert_email_attachments),
+                patch("services.mail_client.ATTACHMENT_DIR", Path(tmpdir)),
+            ):
+                self.assertEqual(mail_client.sync_emails(limit=1), 1)
+
+            stored = saved[0][1][0]
+            stored_path = Path(stored["path"])
+
+        self.assertEqual(saved[0][0], "unique-id-1")
+        self.assertEqual(stored["filename"], "report.pdf")
+        self.assertEqual(stored["content_type"], "application/pdf")
+        self.assertEqual(stored_path.name, "report.pdf")
+        self.assertEqual(stored["size"], len(b"binary report content"))
 
 
 if __name__ == "__main__":

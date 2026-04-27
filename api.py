@@ -1,3 +1,7 @@
+from pathlib import Path
+
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from nicegui import app
 
 from config import get_categories, save_categories
@@ -5,6 +9,7 @@ from database import (
     list_emails,
     get_email,
     update_email_status,
+    get_email_attachment,
 )
 from services.mail_client import sync_emails
 from services.template_service import (
@@ -70,6 +75,23 @@ def api_get_email(email_id: int):
         "ok": True,
         "item": data,
     }
+
+
+@app.get("/api/emails/{email_id}/attachments/{attachment_id}")
+def api_download_attachment(email_id: int, attachment_id: int):
+    attachment = get_email_attachment(email_id, attachment_id)
+    if not attachment:
+        raise HTTPException(status_code=404, detail="附件不存在")
+
+    path = Path(attachment["path"])
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="附件文件不存在")
+
+    return FileResponse(
+        path,
+        media_type=attachment.get("content_type") or "application/octet-stream",
+        filename=attachment["filename"],
+    )
 
 
 @app.patch("/api/emails/{email_id}/status")

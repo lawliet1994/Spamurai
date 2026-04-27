@@ -48,6 +48,23 @@ def init_db():
     ON emails(is_read, is_deleted)
     """)
 
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS email_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email_uid TEXT,
+        filename TEXT,
+        content_type TEXT,
+        path TEXT,
+        size INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    conn.execute("""
+    CREATE INDEX IF NOT EXISTS idx_email_attachments_email_uid
+    ON email_attachments(email_uid)
+    """)
+
     conn.commit()
     conn.close()
 
@@ -255,3 +272,52 @@ def update_email_status(email_id: int, is_read=None, is_deleted=None):
 
     conn.commit()
     conn.close()
+
+
+def insert_email_attachments(email_uid: str, attachments: list[dict]):
+    if not attachments:
+        return
+
+    conn = get_conn()
+    conn.executemany("""
+    INSERT INTO email_attachments (
+        email_uid, filename, content_type, path, size
+    )
+    VALUES (?, ?, ?, ?, ?)
+    """, [
+        (
+            email_uid,
+            attachment["filename"],
+            attachment.get("content_type", ""),
+            attachment["path"],
+            attachment.get("size", 0),
+        )
+        for attachment in attachments
+    ])
+    conn.commit()
+    conn.close()
+
+
+def list_email_attachments(email_id: int):
+    conn = get_conn()
+    rows = conn.execute("""
+    SELECT a.id, a.filename, a.content_type, a.size
+    FROM email_attachments a
+    JOIN emails e ON e.uid = a.email_uid
+    WHERE e.id = ?
+    ORDER BY a.id
+    """, (email_id,)).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_email_attachment(email_id: int, attachment_id: int):
+    conn = get_conn()
+    row = conn.execute("""
+    SELECT a.*
+    FROM email_attachments a
+    JOIN emails e ON e.uid = a.email_uid
+    WHERE e.id = ? AND a.id = ?
+    """, (email_id, attachment_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None

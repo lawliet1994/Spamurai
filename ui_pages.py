@@ -13,6 +13,7 @@ from database import (
     list_meeting_emails,
     list_meeting_emails_on_date,
     list_emails_needing_analysis_on_date,
+    list_email_attachments,
     get_email,
     update_email_status,
     update_email_analysis,
@@ -715,6 +716,9 @@ def index_page(request: Request):
                     placeholder="点击邮件后显示正文和可读取附件内容"
                 ).classes("w-full").props("rows=8 outlined readonly")
 
+                ui.label("附件").classes("text-sm font-medium text-gray-600")
+                attachment_area = ui.column().classes("w-full gap-1 mb-2")
+
                 reply_editor = ui.textarea(
                     label="回复草稿",
                     placeholder="点击邮件的“回复”后自动生成"
@@ -824,6 +828,20 @@ def index_page(request: Request):
         received_at = format_email_time(row.get("received_at"))
         reply_received_at.text = f"接收时间：{received_at}" if received_at else ""
         body_viewer.value = row.get("body") or "无正文或附件内容"
+        attachment_area.clear()
+        attachments = list_email_attachments(row["id"])
+        with attachment_area:
+            if attachments:
+                for attachment in attachments:
+                    url = f"/api/emails/{row['id']}/attachments/{attachment['id']}"
+                    with ui.row().classes("items-center justify-between w-full no-wrap"):
+                        ui.label(attachment["filename"]).classes("text-sm truncate")
+                        ui.button(
+                            icon="download",
+                            on_click=lambda u=url: ui.navigate.to(u),
+                        ).props("flat dense round")
+            else:
+                ui.label("无附件").classes("text-xs text-gray-500")
         reply_editor.value = draft
         template_editor.value = raw_template
 

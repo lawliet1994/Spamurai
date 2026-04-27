@@ -194,6 +194,33 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertEqual(updated["is_read"], 0)
 
+    def test_email_attachments_can_be_listed_and_loaded_for_download(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "mail.db"
+            attachment_path = Path(tmpdir) / "report.txt"
+            attachment_path.write_text("report content", encoding="utf-8")
+
+            with patch("database.DB_PATH", db_path):
+                database.init_db()
+                database.insert_email(sample_email(
+                    "with-attachment",
+                    "Sun, 26 Apr 2026 09:00:00 +0800",
+                    "低",
+                ))
+                row = database.list_emails()[0]
+                database.insert_email_attachments("with-attachment", [{
+                    "filename": "report.txt",
+                    "content_type": "text/plain",
+                    "path": str(attachment_path),
+                    "size": attachment_path.stat().st_size,
+                }])
+
+                attachments = database.list_email_attachments(row["id"])
+                loaded = database.get_email_attachment(row["id"], attachments[0]["id"])
+
+        self.assertEqual(attachments[0]["filename"], "report.txt")
+        self.assertEqual(loaded["path"], str(attachment_path))
+
 
 if __name__ == "__main__":
     unittest.main()
