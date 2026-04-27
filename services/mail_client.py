@@ -64,7 +64,9 @@ def _is_attachment_part(part):
 
 def _safe_filename(filename: str) -> str:
     name = Path(filename).name.strip() or "未命名附件"
-    return re.sub(r"[/\\:\0]", "_", name)
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
+    name = name.rstrip(" .")
+    return name or "未命名附件"
 
 
 def _decode_part_payload(part):

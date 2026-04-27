@@ -37,6 +37,11 @@ class LoginFailsPOP3:
 
 
 class MailClientTests(unittest.TestCase):
+    def test_safe_filename_replaces_windows_invalid_characters(self):
+        value = mail_client._safe_filename('??????_1776059397910.png')
+
+        self.assertEqual(value, "_______1776059397910.png")
+
     def test_sync_emails_stops_when_pop3_login_fails(self):
         LoginFailsPOP3.quit_called = False
 
