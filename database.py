@@ -279,6 +279,7 @@ def insert_email_attachments(email_uid: str, attachments: list[dict]):
         return
 
     conn = get_conn()
+    conn.execute("DELETE FROM email_attachments WHERE email_uid = ?", (email_uid,))
     conn.executemany("""
     INSERT INTO email_attachments (
         email_uid, filename, content_type, path, size
@@ -301,11 +302,16 @@ def insert_email_attachments(email_uid: str, attachments: list[dict]):
 def list_email_attachments(email_id: int):
     conn = get_conn()
     rows = conn.execute("""
-    SELECT a.id, a.filename, a.content_type, a.size
+    SELECT
+        MIN(a.id) AS id,
+        a.filename,
+        a.content_type,
+        a.size
     FROM email_attachments a
     JOIN emails e ON e.uid = a.email_uid
     WHERE e.id = ?
-    ORDER BY a.id
+    GROUP BY a.filename, a.content_type, a.path, a.size
+    ORDER BY id
     """, (email_id,)).fetchall()
     conn.close()
     return [dict(row) for row in rows]

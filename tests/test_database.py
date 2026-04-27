@@ -221,6 +221,35 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(attachments[0]["filename"], "report.txt")
         self.assertEqual(loaded["path"], str(attachment_path))
 
+    def test_email_attachments_are_not_listed_multiple_times_after_reinsert(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "mail.db"
+            attachment_path = Path(tmpdir) / "report.txt"
+            attachment_path.write_text("report content", encoding="utf-8")
+            attachment = {
+                "filename": "report.txt",
+                "content_type": "text/plain",
+                "path": str(attachment_path),
+                "size": attachment_path.stat().st_size,
+            }
+
+            with patch("database.DB_PATH", db_path):
+                database.init_db()
+                database.insert_email(sample_email(
+                    "with-attachment",
+                    "Sun, 26 Apr 2026 09:00:00 +0800",
+                    "低",
+                ))
+                row = database.list_emails()[0]
+
+                database.insert_email_attachments("with-attachment", [attachment])
+                database.insert_email_attachments("with-attachment", [attachment])
+
+                attachments = database.list_email_attachments(row["id"])
+
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["filename"], "report.txt")
+
 
 if __name__ == "__main__":
     unittest.main()
